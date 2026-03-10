@@ -1,0 +1,188 @@
+package dev.humus.core;
+
+import java.sql.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.Executor;
+
+public class ConnectionWrapper implements Connection {
+    private Connection target;
+    private final List<ProxyPlugin> plugins;
+    private final String originalUrl;
+    private final Properties connectInfo;
+
+    public ConnectionWrapper(Connection target, List<ProxyPlugin> plugins, String url, Properties info) {
+        this.target = target;
+        this.plugins = plugins;
+        this.originalUrl = url;
+        this.connectInfo = info;
+    }
+
+    public Properties getConnectInfo() {
+        return connectInfo;
+    }
+
+    public boolean isSafeToSwitch() throws SQLException {
+        return this.getAutoCommit();
+    }
+
+    public void updateTarget(Connection newTarget) throws SQLException {
+        if (this.target != null && !this.target.isClosed()) {
+            this.target.close(); // Закрываем старое соединение при свитче
+        }
+        this.target = newTarget;
+    }
+
+    private <R> R execute(String methodName, JdbcCallable<Connection, R> terminal, Object[] args) throws SQLException {
+        // Теперь передаем: wrapper(this), target, methodName, terminal, args
+        return new PluginChain(plugins).proceed(this, target, methodName, terminal, args);
+    }
+
+    @Override
+    public Statement createStatement() throws SQLException {
+        return execute("createStatement", (conn, args) ->
+                new StatementWrapper(conn.createStatement(), plugins), null);
+    }
+
+    @Override
+    public Statement createStatement(int resultSetType, int resultSetConcurrency) throws SQLException {
+        return execute("createStatement", (conn, args) ->
+                        new StatementWrapper(conn.createStatement(resultSetType, resultSetConcurrency), plugins),
+                new Object[]{resultSetType, resultSetConcurrency});
+    }
+
+    @Override
+    public Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
+        return execute("createStatement", (conn, args) ->
+                        new StatementWrapper(conn.createStatement(resultSetType, resultSetConcurrency, resultSetHoldability), plugins),
+                new Object[]{resultSetType, resultSetConcurrency, resultSetHoldability});
+    }
+
+    @Override
+    public CallableStatement prepareCall(String sql) throws SQLException {
+        return execute("prepareCall", (conn, args) ->
+                new CallableStatementWrapper(conn.prepareCall(sql), plugins), new Object[]{sql});
+    }
+
+    @Override
+    public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency) throws SQLException {
+        return execute("prepareCall", (conn, args) ->
+                        new CallableStatementWrapper(conn.prepareCall(sql, resultSetType, resultSetConcurrency), plugins),
+                new Object[]{sql, resultSetType, resultSetConcurrency});
+    }
+
+    @Override
+    public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
+        return execute("prepareCall", (conn, args) ->
+                        new CallableStatementWrapper(conn.prepareCall(sql, resultSetType, resultSetConcurrency, resultSetHoldability), plugins),
+                new Object[]{sql, resultSetType, resultSetConcurrency, resultSetHoldability});
+    }
+
+    // --- Методы управления состоянием (Важно для Discovery/Routing) ---
+
+    @Override
+    public void setReadOnly(boolean readOnly) throws SQLException {
+        execute("setReadOnly", (t, a) -> {
+            t.setReadOnly(readOnly);
+            return null;
+        }, new Object[]{readOnly});
+    }
+
+    @Override
+    public void close() throws SQLException {
+        execute("close", (t, a) -> {
+            t.close();
+            return null;
+        }, null);
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql) throws SQLException {
+        return execute("prepareStatement", (conn, args) ->
+                new PreparedStatementWrapper(conn.prepareStatement(sql), plugins), new Object[]{sql});
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency) throws SQLException {
+        return execute("prepareStatement", (conn, args) ->
+                        new PreparedStatementWrapper(conn.prepareStatement(sql, resultSetType, resultSetConcurrency), plugins),
+                new Object[]{sql, resultSetType, resultSetConcurrency});
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
+        return execute("prepareStatement", (conn, args) ->
+                        new PreparedStatementWrapper(conn.prepareStatement(sql, resultSetType, resultSetConcurrency, resultSetHoldability), plugins),
+                new Object[]{sql, resultSetType, resultSetConcurrency, resultSetHoldability});
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) throws SQLException {
+        return execute("prepareStatement", (conn, args) ->
+                        new PreparedStatementWrapper(conn.prepareStatement(sql, autoGeneratedKeys), plugins),
+                new Object[]{sql, autoGeneratedKeys});
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, int[] columnIndexes) throws SQLException {
+        return execute("prepareStatement", (conn, args) ->
+                        new PreparedStatementWrapper(conn.prepareStatement(sql, columnIndexes), plugins),
+                new Object[]{sql, columnIndexes});
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, String[] columnNames) throws SQLException {
+        return execute("prepareStatement", (conn, args) ->
+                        new PreparedStatementWrapper(conn.prepareStatement(sql, columnNames), plugins),
+                new Object[]{sql, columnNames});
+    }
+
+    // --- Прямое делегирование (Основные методы) ---
+
+
+    @Override public void commit() throws SQLException { target.commit(); }
+    @Override public void rollback() throws SQLException { target.rollback(); }
+    @Override public void setAutoCommit(boolean autoCommit) throws SQLException { target.setAutoCommit(autoCommit); }
+    @Override public boolean getAutoCommit() throws SQLException { return target.getAutoCommit(); }
+    @Override public boolean isClosed() throws SQLException { return target.isClosed(); }
+    @Override public DatabaseMetaData getMetaData() throws SQLException { return target.getMetaData(); }
+
+    // Прямое делегирование для Wrapper интерфейса
+    @Override public <T> T unwrap(Class<T> iface) throws SQLException { return target.unwrap(iface); }
+    @Override public boolean isWrapperFor(Class<?> iface) throws SQLException { return target.isWrapperFor(iface); }
+
+    // --- Остальные методы JDBC (проброс в target) ---
+    @Override public String nativeSQL(String sql) throws SQLException { return target.nativeSQL(sql); }
+    @Override public void setCatalog(String catalog) throws SQLException { target.setCatalog(catalog); }
+    @Override public String getCatalog() throws SQLException { return target.getCatalog(); }
+    @Override public void setTransactionIsolation(int level) throws SQLException { target.setTransactionIsolation(level); }
+    @Override public int getTransactionIsolation() throws SQLException { return target.getTransactionIsolation(); }
+    @Override public SQLWarning getWarnings() throws SQLException { return target.getWarnings(); }
+    @Override public void clearWarnings() throws SQLException { target.clearWarnings(); }
+    @Override public Map<String, Class<?>> getTypeMap() throws SQLException { return target.getTypeMap(); }
+    @Override public void setTypeMap(Map<String, Class<?>> map) throws SQLException { target.setTypeMap(map); }
+    @Override public void setHoldability(int holdability) throws SQLException { target.setHoldability(holdability); }
+    @Override public int getHoldability() throws SQLException { return target.getHoldability(); }
+    @Override public Savepoint setSavepoint() throws SQLException { return target.setSavepoint(); }
+    @Override public Savepoint setSavepoint(String name) throws SQLException { return target.setSavepoint(name); }
+    @Override public void rollback(Savepoint savepoint) throws SQLException { target.rollback(savepoint); }
+    @Override public void releaseSavepoint(Savepoint savepoint) throws SQLException { target.releaseSavepoint(savepoint); }
+    @Override public Clob createClob() throws SQLException { return target.createClob(); }
+    @Override public Blob createBlob() throws SQLException { return target.createBlob(); }
+    @Override public NClob createNClob() throws SQLException { return target.createNClob(); }
+    @Override public SQLXML createSQLXML() throws SQLException { return target.createSQLXML(); }
+    @Override public boolean isValid(int timeout) throws SQLException { return target.isValid(timeout); }
+    @Override public void setClientInfo(String name, String value) throws SQLClientInfoException { target.setClientInfo(name, value); }
+    @Override public void setClientInfo(Properties properties) throws SQLClientInfoException { target.setClientInfo(properties); }
+    @Override public String getClientInfo(String name) throws SQLException { return target.getClientInfo(name); }
+    @Override public Properties getClientInfo() throws SQLException { return target.getClientInfo(); }
+    @Override public Array createArrayOf(String typeName, Object[] elements) throws SQLException { return target.createArrayOf(typeName, elements); }
+    @Override public Struct createStruct(String typeName, Object[] attributes) throws SQLException { return target.createStruct(typeName, attributes); }
+    @Override public void setSchema(String schema) throws SQLException { target.setSchema(schema); }
+    @Override public String getSchema() throws SQLException { return target.getSchema(); }
+    @Override public void abort(Executor executor) throws SQLException { target.abort(executor); }
+    @Override public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException { target.setNetworkTimeout(executor, milliseconds); }
+    @Override public int getNetworkTimeout() throws SQLException { return target.getNetworkTimeout(); }
+    @Override public boolean isReadOnly() throws SQLException { return target.isReadOnly(); }
+}

@@ -16,7 +16,8 @@ public class PluginChain {
         this.index = index;
     }
 
-    public <T, R> R proceed(T target, String methodName, JdbcCallable<T, R> terminal, Object[] args)
+    // В PluginChain.java
+    public <W, T, R> R proceed(W wrapper, T target, String methodName, JdbcCallable<T, R> terminal, Object[] args)
             throws SQLException {
 
         if (index >= plugins.size()) {
@@ -26,10 +27,12 @@ public class PluginChain {
         ProxyPlugin currentPlugin = plugins.get(index);
         PluginChain nextChain = new PluginChain(plugins, index + 1);
 
+        // В интерфейс ProxyPlugin нужно будет тоже добавить аргумент 'wrapper'
         return currentPlugin.execute(
-                target,
+                wrapper, // Передаем враппер (ConnectionWrapper)
+                target,  // Передаем физический коннект (PgConnection)
                 methodName,
-                (t, a) -> nextChain.proceed(t, methodName, terminal, a),
+                (t, a) -> nextChain.proceed(wrapper, t, methodName, terminal, a),
                 args
         );
     }

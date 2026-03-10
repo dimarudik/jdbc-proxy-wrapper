@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package dev.humus.discovery;
+
+option java_multiple_files = true;
+
+enum InstanceType {
+  MASTER = 0;
+  SYNC_REPLICA = 1;
+  ASYNC_REPLICA = 2;
+}
+
+message DiscoveryRequest {
+  string service_name = 1;
+}
+
+message DiscoveryResponse {
+  string host = 1;
+  int32 port = 2;
+  InstanceType instance_type = 3;
+}
+
+service DatabaseDiscoveryService {
+  rpc GetDatabaseInstance(DiscoveryRequest) returns (DiscoveryResponse);
+}
