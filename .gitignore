@@ -1,3 +1,16 @@
+.DS_Store
+.idea
+/target
+*.iml
+/lib
+mvnw*
+.mvn*
+HELP.md
+/logs
+/service/.gradle
+chekist/target
+.m2
+
 # Compiled class file
 *.class
 
