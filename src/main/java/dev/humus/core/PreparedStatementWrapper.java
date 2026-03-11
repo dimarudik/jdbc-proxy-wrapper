@@ -37,7 +37,6 @@ public class PreparedStatementWrapper extends StatementWrapper implements Prepar
         return execute("execute", (t, a) -> t.execute(), null);
     }
 
-    // Делегирование установки параметров (напрямую в target для производительности)
     @Override public void setNull(int parameterIndex, int sqlType) throws SQLException { target.setNull(parameterIndex, sqlType); }
     @Override public void setBoolean(int parameterIndex, boolean x) throws SQLException { target.setBoolean(parameterIndex, x); }
     @Override public void setInt(int parameterIndex, int x) throws SQLException { target.setInt(parameterIndex, x); }
@@ -48,9 +47,6 @@ public class PreparedStatementWrapper extends StatementWrapper implements Prepar
     @Override public void addBatch() throws SQLException { target.addBatch(); }
     @Override public ResultSetMetaData getMetaData() throws SQLException { return target.getMetaData(); }
     @Override public ParameterMetaData getParameterMetaData() throws SQLException { return target.getParameterMetaData(); }
-
-    // Остальные методы setXXX (BigDecimal, Date, Time, Timestamp, Array, Blob, Clob и т.д.)
-    // пробрасываются в target аналогично...
     @Override public void setByte(int parameterIndex, byte x) throws SQLException { target.setByte(parameterIndex, x); }
     @Override public void setShort(int parameterIndex, short x) throws SQLException { target.setShort(parameterIndex, x); }
     @Override public void setFloat(int parameterIndex, float x) throws SQLException { target.setFloat(parameterIndex, x); }

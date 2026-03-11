@@ -29,13 +29,12 @@ public class ConnectionWrapper implements Connection {
 
     public void updateTarget(Connection newTarget) throws SQLException {
         if (this.target != null && !this.target.isClosed()) {
-            this.target.close(); // Закрываем старое соединение при свитче
+            this.target.close();
         }
         this.target = newTarget;
     }
 
     private <R> R execute(String methodName, JdbcCallable<Connection, R> terminal, Object[] args) throws SQLException {
-        // Теперь передаем: wrapper(this), target, methodName, terminal, args
         return new PluginChain(plugins).proceed(this, target, methodName, terminal, args);
     }
 
@@ -78,8 +77,6 @@ public class ConnectionWrapper implements Connection {
                         new CallableStatementWrapper(conn.prepareCall(sql, resultSetType, resultSetConcurrency, resultSetHoldability), plugins),
                 new Object[]{sql, resultSetType, resultSetConcurrency, resultSetHoldability});
     }
-
-    // --- Методы управления состоянием (Важно для Discovery/Routing) ---
 
     @Override
     public void setReadOnly(boolean readOnly) throws SQLException {
@@ -138,8 +135,6 @@ public class ConnectionWrapper implements Connection {
                 new Object[]{sql, columnNames});
     }
 
-    // --- Прямое делегирование (Основные методы) ---
-
 
     @Override public void commit() throws SQLException { target.commit(); }
     @Override public void rollback() throws SQLException { target.rollback(); }
@@ -147,12 +142,8 @@ public class ConnectionWrapper implements Connection {
     @Override public boolean getAutoCommit() throws SQLException { return target.getAutoCommit(); }
     @Override public boolean isClosed() throws SQLException { return target.isClosed(); }
     @Override public DatabaseMetaData getMetaData() throws SQLException { return target.getMetaData(); }
-
-    // Прямое делегирование для Wrapper интерфейса
     @Override public <T> T unwrap(Class<T> iface) throws SQLException { return target.unwrap(iface); }
     @Override public boolean isWrapperFor(Class<?> iface) throws SQLException { return target.isWrapperFor(iface); }
-
-    // --- Остальные методы JDBC (проброс в target) ---
     @Override public String nativeSQL(String sql) throws SQLException { return target.nativeSQL(sql); }
     @Override public void setCatalog(String catalog) throws SQLException { target.setCatalog(catalog); }
     @Override public String getCatalog() throws SQLException { return target.getCatalog(); }

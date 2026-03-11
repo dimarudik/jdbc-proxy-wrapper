@@ -39,7 +39,6 @@ public class HumusDriverTest {
     private static Server grpcServer;
     private static final int GRPC_PORT = 9091;
 
-    // Состояние для мока gRPC: какой тип инстанса возвращать
     private static final AtomicReference<InstanceType> nextType = new AtomicReference<>(InstanceType.MASTER);
 
     @BeforeAll
@@ -76,14 +75,12 @@ public class HumusDriverTest {
         props.setProperty("password", "pass");
 
         try (Connection conn = DriverManager.getConnection(url, props)) {
-            // 1. По умолчанию мы на Master
             assertFalse(conn.isReadOnly());
             int masterPort = getInternalPort(conn);
             assertEquals(masterDb.getMappedPort(5432), masterPort);
 
-            // 2. Переключаемся на Replica
             nextType.set(InstanceType.ASYNC_REPLICA);
-            conn.setReadOnly(true); // Тут срабатывает Hot Swap в плагине
+            conn.setReadOnly(true);
 
             assertTrue(conn.isReadOnly());
             int replicaPort = getInternalPort(conn);
@@ -95,22 +92,18 @@ public class HumusDriverTest {
     }
 
     @Test
-    @DisplayName("Запрет переключения внутри транзакции")
+    @DisplayName("Switch to read-only mode is not allowed inside transaction")
     void testNoSwitchInTransaction() throws Exception {
         String url = "jdbc:humus:grpc://localhost:" + GRPC_PORT + "/humus_db";
         try (Connection conn = DriverManager.getConnection(url, "user", "pass")) {
-            conn.setAutoCommit(false); // Начинаем транзакцию
-
-            assertThrows(java.sql.SQLException.class, () -> {
-                conn.setReadOnly(true);
-            }, "Должно быть исключение при попытке свитча в транзакции");
+            conn.setAutoCommit(false);
+            assertThrows(java.sql.SQLException.class, () -> conn.setReadOnly(true),
+                    "Can not switch to read-only mode inside transaction");
         }
     }
 
     private int getInternalPort(Connection conn) throws Exception {
-        // Вытягиваем реальный порт через метаданные, чтобы убедиться в смене сокета
         String url = conn.getMetaData().getURL();
-        // url формат: jdbc:postgresql://localhost:PORT/db
         return Integer.parseInt(url.split(":")[3].split("/")[0]);
     }
 }

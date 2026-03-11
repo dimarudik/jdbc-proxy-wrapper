@@ -13,11 +13,8 @@ public class StatementWrapper implements Statement {
     }
 
     private <R> R execute(String methodName, JdbcCallable<Statement, R> terminal, Object[] args) throws SQLException {
-        // Теперь передаем: wrapper(this), target, methodName, terminal, args
         return new PluginChain(plugins).proceed(this, target, methodName, terminal, args);
     }
-
-    // --- Основные методы выполнения (Пропускаем через плагины) ---
 
     @Override
     public ResultSet executeQuery(String sql) throws SQLException {
@@ -38,8 +35,6 @@ public class StatementWrapper implements Statement {
     public void close() throws SQLException {
         execute("close", (t, a) -> { t.close(); return null; }, null);
     }
-
-    // --- Прямое делегирование (Остальные методы) ---
 
     @Override public int getMaxFieldSize() throws SQLException { return target.getMaxFieldSize(); }
     @Override public void setMaxFieldSize(int max) throws SQLException { target.setMaxFieldSize(max); }

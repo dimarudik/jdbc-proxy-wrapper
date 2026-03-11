@@ -32,17 +32,12 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
             boolean requestedReadOnly = (boolean) args[0];
             ConnectionWrapper connWrapper = (ConnectionWrapper) wrapper;
 
-            // Проверка: можно ли сейчас переключаться?
             if (!connWrapper.isSafeToSwitch()) {
                 throw new SQLException("Cannot switch to " +
                         (requestedReadOnly ? "Replica" : "Master") +
                         " inside an active transaction. Commit or rollback first.");
             }
 
-            // Если хост уже соответствует типу (нужна проверка текущего типа в плагине), выходим
-            // ... (логика Discovery из прошлых шагов)
-
-            // Hot Swap
             DiscoveryResponse node = resolve();
             String newUrl = String.format("jdbc:postgresql://%s:%d/%s",
                     node.getHost(), node.getPort(), dbClusterName);
@@ -66,7 +61,6 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
                 .build();
 
         try {
-            // Создаем блокирующий стаб (сгенерирован из .proto)
             DatabaseDiscoveryServiceGrpc.DatabaseDiscoveryServiceBlockingStub stub =
                     DatabaseDiscoveryServiceGrpc.newBlockingStub(channel);
 
@@ -74,7 +68,6 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
                     .setServiceName(serviceName)
                     .build();
 
-            // Вызываем удаленный метод с таймаутом
             return stub.withDeadlineAfter(5, TimeUnit.SECONDS)
                     .getDatabaseInstance(request);
 

@@ -17,11 +17,9 @@ public class CallableStatementWrapper extends PreparedStatementWrapper implement
         this.target = target;
     }
 
-    // Регистрация OUT параметров (напрямую)
     @Override public void registerOutParameter(int parameterIndex, int sqlType) throws SQLException { target.registerOutParameter(parameterIndex, sqlType); }
     @Override public void registerOutParameter(String parameterName, int sqlType) throws SQLException { target.registerOutParameter(parameterName, sqlType); }
 
-    // Получение результатов (напрямую)
     @Override public String getString(int parameterIndex) throws SQLException { return target.getString(parameterIndex); }
     @Override public boolean getBoolean(int parameterIndex) throws SQLException { return target.getBoolean(parameterIndex); }
     @Override public int getInt(int parameterIndex) throws SQLException { return target.getInt(parameterIndex); }
@@ -31,7 +29,6 @@ public class CallableStatementWrapper extends PreparedStatementWrapper implement
     @Override public int getInt(String parameterName) throws SQLException { return target.getInt(parameterName); }
     @Override public Object getObject(String parameterName) throws SQLException { return target.getObject(parameterName); }
 
-    // Прочие методы делегирования (Long, Double, Float, BigDecimal, Date, Time, Timestamp, RowId, NClob, SQLXML и т.д.)
     @Override public byte getByte(int parameterIndex) throws SQLException { return target.getByte(parameterIndex); }
     @Override public short getShort(int parameterIndex) throws SQLException { return target.getShort(parameterIndex); }
     @Override public long getLong(int parameterIndex) throws SQLException { return target.getLong(parameterIndex); }
