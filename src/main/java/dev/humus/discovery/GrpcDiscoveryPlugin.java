@@ -96,4 +96,8 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
             return System.currentTimeMillis() > expirationTime;
         }
     }
+
+    public static void clearCache() {
+        CACHE.clear();
+    }
 }

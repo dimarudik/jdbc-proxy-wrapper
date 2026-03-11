@@ -58,6 +58,9 @@ public class HumusDriverErrorTest {
     void reset() {
         shouldFailDiscovery = false;
         GrpcDiscoveryPlugin.invalidateCache("error-cluster");
+        GrpcDiscoveryPlugin.invalidateCache("wrong-db-cluster");
+        GrpcDiscoveryPlugin.invalidateCache("humus_db");
+
     }
 
     @Test
@@ -75,7 +78,8 @@ public class HumusDriverErrorTest {
     @Test
     @DisplayName("Must throw SQLException when database is down")
     void shouldThrowExceptionWhenDatabaseIsDown() {
-        grpcServer.shutdownNow();
+        shouldFailDiscovery = false;
+        shouldFailDiscovery = true;
         String wrongDbCLuster = "/wrong-db-cluster";
         String url = "jdbc:humus:grpc://localhost:" + GRPC_PORT + wrongDbCLuster;
 
@@ -88,6 +92,7 @@ public class HumusDriverErrorTest {
     @DisplayName("Should throw SQLException on SQL errors via StatementWrapper")
     void shouldForwardSqlExceptionsFromStatement() throws SQLException {
         shouldFailDiscovery = false;
+        GrpcDiscoveryPlugin.invalidateCache("humus_db");
 
         String url = "jdbc:humus:grpc://localhost:" + GRPC_PORT + "/humus_db";
 

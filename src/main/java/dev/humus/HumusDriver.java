@@ -67,7 +67,6 @@ public class HumusDriver implements Driver {
         Enumeration<Driver> drivers = DriverManager.getDrivers();
         while (drivers.hasMoreElements()) {
             Driver driver = drivers.nextElement();
-            // Проверяем, что это не мы сами, чтобы избежать рекурсии
             if (!(driver instanceof HumusDriver) && driver.acceptsURL(url)) {
                 return driver;
             }

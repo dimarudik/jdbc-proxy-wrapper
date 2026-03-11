@@ -1,16 +1,11 @@
+
 package dev.humus;
 
-import dev.humus.discovery.DatabaseDiscoveryServiceGrpc;
-import dev.humus.discovery.DiscoveryRequest;
-import dev.humus.discovery.DiscoveryResponse;
-import dev.humus.discovery.InstanceType;
+import dev.humus.discovery.*;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -26,12 +21,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class HumusDriverTest {
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres")
-            .withDatabaseName("humus_db")
-            .withUsername("user")
-            .withPassword("pass");
+           .withDatabaseName("humus_db")
+           .withUsername("user")
+           .withPassword("pass");
 
     private static Server grpcServer;
     private static final AtomicInteger discoveryCalls = new AtomicInteger(0);
@@ -44,14 +40,14 @@ public class HumusDriverTest {
         java.util.logging.Logger.getLogger("").setLevel(java.util.logging.Level.FINEST);
 
         grpcServer = ServerBuilder.forPort(GRPC_PORT)
-                .addService(new DatabaseDiscoveryServiceGrpc.DatabaseDiscoveryServiceImplBase() {
+               .addService(new DatabaseDiscoveryServiceGrpc.DatabaseDiscoveryServiceImplBase() {
                     @Override
                     public void getDatabaseInstance(DiscoveryRequest req, StreamObserver<DiscoveryResponse> obs) {
                         discoveryCalls.incrementAndGet();
                         obs.onNext(DiscoveryResponse.newBuilder()
-                                .setHost(postgres.getHost())
-                                .setPort(postgres.getMappedPort(5432))
-                                .setInstanceType(InstanceType.MASTER).build());
+                               .setHost(postgres.getHost())
+                               .setPort(postgres.getMappedPort(5432))
+                               .setInstanceType(InstanceType.MASTER).build());
                         obs.onCompleted();
                     }
                 }).build().start();
@@ -59,7 +55,13 @@ public class HumusDriverTest {
 
     @AfterAll
     static void tearDown() {
-        if (grpcServer != null) grpcServer.shutdownNow();
+        if (grpcServer!= null) grpcServer.shutdownNow();
+    }
+
+    @BeforeEach
+    void init() {
+        GrpcDiscoveryPlugin.clearCache();
+        discoveryCalls.set(0);
     }
 
     @Test
