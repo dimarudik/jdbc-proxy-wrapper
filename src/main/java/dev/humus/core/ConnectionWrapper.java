@@ -7,7 +7,7 @@ import java.util.Properties;
 import java.util.concurrent.Executor;
 
 public class ConnectionWrapper implements Connection {
-    private Connection target;
+    private final Connection target;
     private final List<ProxyPlugin> plugins;
     private final String originalUrl;
     private final Properties connectInfo;
@@ -19,24 +19,18 @@ public class ConnectionWrapper implements Connection {
         this.connectInfo = info;
     }
 
-    public Properties getConnectInfo() {
-        return connectInfo;
-    }
-
-    public boolean isSafeToSwitch() throws SQLException {
-        return this.getAutoCommit();
-    }
-
-    public void updateTarget(Connection newTarget) throws SQLException {
-        if (this.target != null && !this.target.isClosed()) {
-            this.target.close();
-        }
-        this.target = newTarget;
-    }
-
     private <R> R execute(String methodName, JdbcCallable<Connection, R> terminal, Object[] args) throws SQLException {
         return new PluginChain(plugins).proceed(this, target, methodName, terminal, args);
     }
+
+    @Override
+    public void close() throws SQLException {
+        execute("close", (t, a) -> {
+            t.close();
+            return null;
+        }, null);
+    }
+
 
     @Override
     public Statement createStatement() throws SQLException {
@@ -76,22 +70,6 @@ public class ConnectionWrapper implements Connection {
         return execute("prepareCall", (conn, args) ->
                         new CallableStatementWrapper(conn.prepareCall(sql, resultSetType, resultSetConcurrency, resultSetHoldability), plugins),
                 new Object[]{sql, resultSetType, resultSetConcurrency, resultSetHoldability});
-    }
-
-    @Override
-    public void setReadOnly(boolean readOnly) throws SQLException {
-        execute("setReadOnly", (t, a) -> {
-            t.setReadOnly(readOnly);
-            return null;
-        }, new Object[]{readOnly});
-    }
-
-    @Override
-    public void close() throws SQLException {
-        execute("close", (t, a) -> {
-            t.close();
-            return null;
-        }, null);
     }
 
     @Override
@@ -136,6 +114,7 @@ public class ConnectionWrapper implements Connection {
     }
 
 
+    @Override public void setReadOnly(boolean readOnly) throws SQLException { target.setReadOnly(readOnly); }
     @Override public void commit() throws SQLException { target.commit(); }
     @Override public void rollback() throws SQLException { target.rollback(); }
     @Override public void setAutoCommit(boolean autoCommit) throws SQLException { target.setAutoCommit(autoCommit); }

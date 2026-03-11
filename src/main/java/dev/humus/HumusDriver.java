@@ -35,24 +35,22 @@ public class HumusDriver implements Driver {
             throw new SQLException("Invalid URL. Expected: jdbc:humus:grpc://host:port/clusterName");
         }
 
-        String grpcHost = matcher.group(1);
-        int grpcPort = Integer.parseInt(matcher.group(2));
+        String host = matcher.group(1);
+        int port = Integer.parseInt(matcher.group(2));
         String clusterName = matcher.group(3);
 
-        // 1. Инициализируем Discovery-плагин
-        GrpcDiscoveryPlugin discoveryPlugin = new GrpcDiscoveryPlugin(grpcHost + ":" + grpcPort, clusterName);
+        String discoveryAddr = host + ":" + port;
 
-        // 2. Делаем первый resolve, чтобы узнать, куда коннектиться изначально
-        DiscoveryResponse node = discoveryPlugin.resolve();
+        GrpcDiscoveryPlugin plugin = new GrpcDiscoveryPlugin(discoveryAddr, clusterName);
 
-        // 3. Формируем реальный URL для целевого драйвера (PostgreSQL)
-        String targetUrl = String.format("jdbc:postgresql://%s:%d/%s",
-                node.getHost(), node.getPort(), clusterName);
+        DiscoveryResponse response = plugin.resolve();
 
-        log.debug("Connecting to target: {} ({})", targetUrl, node.getInstanceType());
+        String realJdbcUrl = String.format("jdbc:postgresql://%s:%d/%s",
+                response.getHost(), response.getPort(), clusterName);
 
-        Connection physicalConn = DriverManager.getConnection(targetUrl, info);
-        return new ConnectionWrapper(physicalConn, List.of(discoveryPlugin), url, info);
+        Connection physicalConn = DriverManager.getConnection(realJdbcUrl, info);
+
+        return new ConnectionWrapper(physicalConn, List.of(plugin), url, info);
     }
 
     @Override
@@ -60,7 +58,6 @@ public class HumusDriver implements Driver {
         return url != null && url.startsWith(PREFIX);
     }
 
-    // ... остальные стандартные методы JDBC Driver (version, compliance и т.д.)
     @Override public int getMajorVersion() { return 1; }
     @Override public int getMinorVersion() { return 0; }
     @Override public boolean jdbcCompliant() { return false; }

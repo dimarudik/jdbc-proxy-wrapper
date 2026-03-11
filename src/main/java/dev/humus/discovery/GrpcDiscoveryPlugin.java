@@ -1,92 +1,105 @@
 package dev.humus.discovery;
 
-import dev.humus.core.ConnectionWrapper;
 import dev.humus.core.JdbcCallable;
 import dev.humus.core.ProxyPlugin;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class GrpcDiscoveryPlugin implements ProxyPlugin {
-    private static final Logger log = LoggerFactory.getLogger(GrpcDiscoveryPlugin.class);
+    private static final Logger logger = Logger.getLogger(GrpcDiscoveryPlugin.class.getName());
 
-    private final String discoveryServiceAddr;
+    private static final Map<String, CachedResponse> CACHE = new ConcurrentHashMap<>();
+    private static final long CACHE_TTL_MS = TimeUnit.MINUTES.toMillis(5);
+
+    private final String discoveryAddr;
     private final String dbClusterName;
 
-    public GrpcDiscoveryPlugin(String discoveryServiceAddr, String dbClusterName) {
-        this.discoveryServiceAddr = discoveryServiceAddr;
+    public GrpcDiscoveryPlugin(String discoveryAddr, String dbClusterName) {
+        this.discoveryAddr = discoveryAddr;
         this.dbClusterName = dbClusterName;
+    }
+
+    public DiscoveryResponse resolve() throws SQLException {
+        CachedResponse cached = CACHE.get(dbClusterName);
+
+        if (cached != null && !cached.isExpired()) {
+            logger.log(Level.FINE, "Using cached discovery for cluster: {0}", dbClusterName);
+            return cached.response;
+        }
+
+        logger.log(Level.INFO, "Cache miss or expired. Fetching discovery for: {0}", dbClusterName);
+        try {
+            DiscoveryResponse freshResponse = fetchFromGrpc();
+            CACHE.put(dbClusterName, new CachedResponse(freshResponse));
+            return freshResponse;
+        } catch (SQLException e) {
+            // Если gRPC упал, но в кеше есть старые данные — используем их как fallback
+            if (cached != null) {
+                logger.log(Level.WARNING, "Discovery failed, using stale cache for {0}", dbClusterName);
+                return cached.response;
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Позволяет принудительно сбросить кеш (например, при ошибке соединения)
+     */
+    public static void invalidateCache(String clusterName) {
+        CACHE.remove(clusterName);
+    }
+
+    private DiscoveryResponse fetchFromGrpc() throws SQLException {
+        ManagedChannel channel = ManagedChannelBuilder.forTarget(discoveryAddr)
+                .usePlaintext()
+                .build();
+        try {
+            var stub = DatabaseDiscoveryServiceGrpc.newBlockingStub(channel);
+            return stub.withDeadlineAfter(5, TimeUnit.SECONDS)
+                    .getDatabaseInstance(DiscoveryRequest.newBuilder()
+                            .setServiceName(dbClusterName)
+                            .build());
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "gRPC Discovery failed: {0}", e.getMessage());
+            throw new SQLException("Discovery service unavailable", e);
+        } finally {
+            channel.shutdown();
+        }
     }
 
     @Override
     public <W, T, R> R execute(W wrapper, T target, String methodName, JdbcCallable<T, R> next, Object[] args)
             throws SQLException {
-
-        if ("setReadOnly".equals(methodName)) {
-            boolean requestedReadOnly = (boolean) args[0];
-            ConnectionWrapper connWrapper = (ConnectionWrapper) wrapper;
-
-            if (!connWrapper.isSafeToSwitch()) {
-                throw new SQLException("Cannot switch to " +
-                        (requestedReadOnly ? "Replica" : "Master") +
-                        " inside an active transaction. Commit or rollback first.");
-            }
-
-            DiscoveryResponse node = resolve();
-            String newUrl = String.format("jdbc:postgresql://%s:%d/%s",
-                    node.getHost(), node.getPort(), dbClusterName);
-
-            Connection newConn = DriverManager.getConnection(newUrl, connWrapper.getConnectInfo());
-            newConn.setReadOnly(requestedReadOnly);
-            newConn.setAutoCommit(true); // Свитч возможен только в этом режиме
-
-            connWrapper.updateTarget(newConn);
-            log.info("Successfully switched to {} node", node.getInstanceType());
-
-            return null;
-        }
-
-        return next.call(target, args);
-    }
-
-    private DiscoveryResponse callDiscoveryService(String serviceName) throws SQLException {
-        ManagedChannel channel = ManagedChannelBuilder.forTarget(discoveryServiceAddr)
-                .usePlaintext() // Для разработки, в продакшене обычно TLS
-                .build();
-
         try {
-            DatabaseDiscoveryServiceGrpc.DatabaseDiscoveryServiceBlockingStub stub =
-                    DatabaseDiscoveryServiceGrpc.newBlockingStub(channel);
-
-            DiscoveryRequest request = DiscoveryRequest.newBuilder()
-                    .setServiceName(serviceName)
-                    .build();
-
-            return stub.withDeadlineAfter(5, TimeUnit.SECONDS)
-                    .getDatabaseInstance(request);
-
-        } catch (Exception e) {
-            log.error("Failed to discover database via gRPC: {}", e.getMessage());
-            throw new SQLException("Discovery service unavailable", e);
-        } finally {
-            channel.shutdown();
-            try {
-                if (!channel.awaitTermination(1, TimeUnit.SECONDS)) {
-                    channel.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            return next.call(target, args);
+        } catch (SQLException e) {
+            // Если получили ошибку связи (SQLState 08***), инвалидируем кеш
+            if (e.getSQLState() != null && e.getSQLState().startsWith("08")) {
+                logger.log(Level.WARNING, "Connection error detected, invalidating discovery cache for {0}", dbClusterName);
+                invalidateCache(dbClusterName);
             }
+            throw e;
         }
     }
 
-    public DiscoveryResponse resolve() throws SQLException {
-        return callDiscoveryService(this.dbClusterName);
+    private static class CachedResponse {
+        final DiscoveryResponse response;
+        final long expirationTime;
+
+        CachedResponse(DiscoveryResponse response) {
+            this.response = response;
+            this.expirationTime = System.currentTimeMillis() + CACHE_TTL_MS;
+        }
+
+        boolean isExpired() {
+            return System.currentTimeMillis() > expirationTime;
+        }
     }
 }

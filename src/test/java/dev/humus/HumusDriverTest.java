@@ -1,5 +1,6 @@
 package dev.humus;
 
+import dev.humus.core.ConnectionWrapper;
 import dev.humus.discovery.DatabaseDiscoveryServiceGrpc;
 import dev.humus.discovery.DiscoveryRequest;
 import dev.humus.discovery.DiscoveryResponse;
@@ -9,7 +10,6 @@ import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,10 +19,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.util.Properties;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers
 public class HumusDriverTest {
@@ -65,45 +67,16 @@ public class HumusDriverTest {
     static void tearDown() { if (grpcServer != null) grpcServer.shutdownNow(); }
 
     @Test
-    @DisplayName("Тест переключения Master -> Replica через setReadOnly")
-    void testReadWriteSplitting() throws Exception {
-        Class.forName("dev.humus.HumusDriver");
-        String url = "jdbc:humus:grpc://localhost:" + GRPC_PORT + "/humus_db";
-
-        Properties props = new Properties();
-        props.setProperty("user", "user");
-        props.setProperty("password", "pass");
-
-        try (Connection conn = DriverManager.getConnection(url, props)) {
-            assertFalse(conn.isReadOnly());
-            int masterPort = getInternalPort(conn);
-            assertEquals(masterDb.getMappedPort(5432), masterPort);
-
-            nextType.set(InstanceType.ASYNC_REPLICA);
-            conn.setReadOnly(true);
-
-            assertTrue(conn.isReadOnly());
-            int replicaPort = getInternalPort(conn);
-            assertEquals(replicaDb.getMappedPort(5432), replicaPort);
-            assertNotEquals(masterPort, replicaPort);
-
-            log.info("Hot Swap success! Switched from port {} to {}", masterPort, replicaPort);
-        }
-    }
-
-    @Test
-    @DisplayName("Switch to read-only mode is not allowed inside transaction")
-    void testNoSwitchInTransaction() throws Exception {
-        String url = "jdbc:humus:grpc://localhost:" + GRPC_PORT + "/humus_db";
+    void testSimpleDiscovery() throws Exception {
+        String url = "jdbc:humus:grpc://localhost:9091/humus_db";
         try (Connection conn = DriverManager.getConnection(url, "user", "pass")) {
-            conn.setAutoCommit(false);
-            assertThrows(java.sql.SQLException.class, () -> conn.setReadOnly(true),
-                    "Can not switch to read-only mode inside transaction");
-        }
-    }
+            assertTrue(conn instanceof ConnectionWrapper);
 
-    private int getInternalPort(Connection conn) throws Exception {
-        String url = conn.getMetaData().getURL();
-        return Integer.parseInt(url.split(":")[3].split("/")[0]);
+            try (Statement stmt = conn.createStatement()) {
+                ResultSet rs = stmt.executeQuery("SELECT 1");
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt(1));
+            }
+        }
     }
 }
