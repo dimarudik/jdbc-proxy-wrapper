@@ -27,29 +27,27 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
     }
 
     public DiscoveryResponse resolve() throws SQLException {
+        // 1. Быстрая попытка получить из кеша без блокировок
         CachedResponse cached = CACHE.get(dbClusterName);
-
         if (cached != null && !cached.isExpired()) {
-            logger.log(Level.FINE, "Using cached discovery for cluster: {0}", dbClusterName);
             return cached.response;
         }
 
-        logger.log(Level.FINE, "Cache miss or expired. Fetching discovery for: {0}", dbClusterName);
-        try {
+        // 2. Блокировка только для обновления конкретного кластера
+        // Используем intern() для имени кластера или саму строку как монитор
+        synchronized (dbClusterName.intern()) {
+            // Double-check locking
+            cached = CACHE.get(dbClusterName);
+            if (cached != null && !cached.isExpired()) {
+                return cached.response;
+            }
+
+            logger.log(Level.INFO, "Fetching discovery for: {0}", dbClusterName);
+            // Теперь мы можем безопасно выбрасывать SQLException!
             DiscoveryResponse freshResponse = fetchFromGrpc();
             CACHE.put(dbClusterName, new CachedResponse(freshResponse));
             return freshResponse;
-        } catch (SQLException e) {
-            if (cached != null) {
-                logger.log(Level.FINE, "Discovery failed, using stale cache for {0}", dbClusterName);
-                return cached.response;
-            }
-            throw e;
         }
-    }
-
-    public static void invalidateCache(String clusterName) {
-        CACHE.remove(clusterName);
     }
 
     private DiscoveryResponse fetchFromGrpc() throws SQLException {
@@ -63,7 +61,6 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
                             .setServiceName(dbClusterName)
                             .build());
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "gRPC Discovery failed: {0}", e.getMessage());
             throw new SQLException("Discovery service unavailable", e);
         } finally {
             channel.shutdown();
@@ -71,17 +68,19 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
     }
 
     @Override
-    public <W, T, R> R execute(W wrapper, T target, String methodName, JdbcCallable<T, R> next, Object[] args)
-            throws SQLException {
+    public <W, T, R> R execute(W wrapper, T target, String methodName, JdbcCallable<T, R> next, Object[] args) throws SQLException {
         try {
             return next.call(target, args);
         } catch (SQLException e) {
             if (e.getSQLState() != null && e.getSQLState().startsWith("08")) {
-                logger.log(Level.WARNING, "Connection error detected, invalidating discovery cache for {0}", dbClusterName);
                 invalidateCache(dbClusterName);
             }
             throw e;
         }
+    }
+
+    public static void invalidateCache(String clusterName) {
+        CACHE.remove(clusterName);
     }
 
     private static class CachedResponse {
