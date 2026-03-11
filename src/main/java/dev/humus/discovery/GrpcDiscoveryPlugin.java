@@ -34,24 +34,20 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
             return cached.response;
         }
 
-        logger.log(Level.INFO, "Cache miss or expired. Fetching discovery for: {0}", dbClusterName);
+        logger.log(Level.FINE, "Cache miss or expired. Fetching discovery for: {0}", dbClusterName);
         try {
             DiscoveryResponse freshResponse = fetchFromGrpc();
             CACHE.put(dbClusterName, new CachedResponse(freshResponse));
             return freshResponse;
         } catch (SQLException e) {
-            // Если gRPC упал, но в кеше есть старые данные — используем их как fallback
             if (cached != null) {
-                logger.log(Level.WARNING, "Discovery failed, using stale cache for {0}", dbClusterName);
+                logger.log(Level.FINE, "Discovery failed, using stale cache for {0}", dbClusterName);
                 return cached.response;
             }
             throw e;
         }
     }
 
-    /**
-     * Позволяет принудительно сбросить кеш (например, при ошибке соединения)
-     */
     public static void invalidateCache(String clusterName) {
         CACHE.remove(clusterName);
     }
@@ -80,7 +76,6 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
         try {
             return next.call(target, args);
         } catch (SQLException e) {
-            // Если получили ошибку связи (SQLState 08***), инвалидируем кеш
             if (e.getSQLState() != null && e.getSQLState().startsWith("08")) {
                 logger.log(Level.WARNING, "Connection error detected, invalidating discovery cache for {0}", dbClusterName);
                 invalidateCache(dbClusterName);
