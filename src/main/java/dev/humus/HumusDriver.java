@@ -23,7 +23,6 @@ public class HumusDriver implements Driver {
     static {
         try {
             DriverManager.registerDriver(new HumusDriver());
-            logger.log(Level.FINE, "Humus JDBC Proxy Driver registered");
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to register HumusDriver", e);
         }
@@ -34,8 +33,6 @@ public class HumusDriver implements Driver {
         if (!acceptsURL(url)) {
             return null;
         }
-
-        logger.log(Level.FINE, "Connecting via Humus Proxy: {0}", url);
 
         Matcher matcher = URL_PATTERN.matcher(url);
         if (!matcher.find()) {

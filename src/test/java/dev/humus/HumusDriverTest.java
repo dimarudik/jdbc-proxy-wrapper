@@ -41,6 +41,7 @@ public class HumusDriverTest {
     static void setup() throws Exception {
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
+        java.util.logging.Logger.getLogger("").setLevel(java.util.logging.Level.FINEST);
 
         grpcServer = ServerBuilder.forPort(GRPC_PORT)
                 .addService(new DatabaseDiscoveryServiceGrpc.DatabaseDiscoveryServiceImplBase() {
