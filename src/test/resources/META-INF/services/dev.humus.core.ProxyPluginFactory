@@ -1,0 +1,2 @@
+dev.humus.discovery.GrpcDiscoveryPluginFactory
+dev.humus.spi.CustomSpiPluginFactory

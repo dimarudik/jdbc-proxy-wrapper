@@ -29,20 +29,47 @@ public class HumusDriver implements Driver {
     public Connection connect(String url, Properties info) throws SQLException {
         if (!acceptsURL(url)) return null;
 
-        // 1. Загружаем плагины через SPI
-        List<ProxyPlugin> plugins = loadPlugins(url, info);
+        logger.log(Level.INFO, "Connecting via Humus Proxy: {0}", url);
 
-        // 2. Разрешаем целевой URL через цепочку плагинов
+        List<ProxyPlugin> plugins = new ArrayList<>();
+
+        // Загружаем фабрики через SPI
+        ServiceLoader<ProxyPluginFactory> loader = ServiceLoader.load(ProxyPluginFactory.class);
+
+        logger.log(Level.FINE, "Searching for ProxyPluginFactory implementations via SPI...");
+
+        int factoriesFound = 0;
+        for (ProxyPluginFactory factory : loader) {
+            factoriesFound++;
+            ProxyPlugin plugin = factory.create(url, info);
+            if (plugin != null) {
+                plugins.add(plugin);
+                logger.log(Level.FINE, "Plugin added to chain: {0} (from factory: {1})",
+                        new Object[]{plugin.getClass().getName(), factory.getClass().getName()});
+            }
+        }
+
+        if (plugins.isEmpty()) {
+            logger.log(Level.WARNING, "No plugins were created for this URL (checked {0} factories)", factoriesFound);
+        } else {
+            logger.log(Level.INFO, "Total plugins in chain: {0}", plugins.size());
+        }
+
+        // Разрешаем целевой URL
         String targetUrl = url;
         for (ProxyPlugin plugin : plugins) {
-            targetUrl = plugin.getTargetUrl(targetUrl, info);
+            String resolved = plugin.getTargetUrl(targetUrl, info);
+            if (resolved != null && !resolved.equals(targetUrl)) {
+                logger.log(Level.INFO, "URL resolved by {0}: {1}",
+                        new Object[]{plugin.getClass().getSimpleName(), resolved});
+                targetUrl = resolved;
+            }
         }
 
-        if (targetUrl.startsWith("jdbc:humus:")) {
-            throw new SQLException("No plugin could resolve target URL for " + url);
+        if (targetUrl.startsWith(PREFIX)) {
+            throw new SQLException("No plugin was able to resolve the target database URL for: " + url);
         }
 
-        // 3. Подключаемся к реальной базе
         Driver underlyingDriver = findUnderlyingDriver(targetUrl);
         Connection physicalConn = underlyingDriver.connect(targetUrl, info);
 
