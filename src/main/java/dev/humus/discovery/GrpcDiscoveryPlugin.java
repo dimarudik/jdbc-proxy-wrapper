@@ -28,23 +28,18 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
     }
 
     public DiscoveryResponse resolve() throws SQLException {
-        // 1. Быстрая попытка получить из кеша без блокировок
         CachedResponse cached = CACHE.get(dbClusterName);
         if (cached != null && !cached.isExpired()) {
             return cached.response;
         }
 
-        // 2. Блокировка только для обновления конкретного кластера
-        // Используем intern() для имени кластера или саму строку как монитор
         synchronized (dbClusterName.intern()) {
-            // Double-check locking
             cached = CACHE.get(dbClusterName);
             if (cached != null && !cached.isExpired()) {
                 return cached.response;
             }
 
             logger.log(Level.INFO, "Fetching discovery for: {0}", dbClusterName);
-            // Теперь мы можем безопасно выбрасывать SQLException!
             DiscoveryResponse freshResponse = fetchFromGrpc();
             CACHE.put(dbClusterName, new CachedResponse(freshResponse));
             return freshResponse;
@@ -102,13 +97,10 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
         CACHE.clear();
     }
 
-    // В GrpcDiscoveryPlugin.java
     @Override
     public String getTargetUrl(String url, Properties info) throws SQLException {
-        // Вызываем существующий метод resolve()
         DiscoveryResponse node = this.resolve();
 
-        // Формируем целевой URL (извлекаем имя БД из оригинального URL или берем из параметров)
         String dbName = url.substring(url.lastIndexOf("/") + 1);
         return String.format("jdbc:postgresql://%s:%d/%s",
                 node.getHost(), node.getPort(), dbName);
