@@ -1,16 +1,13 @@
 package dev.humus;
 
 import dev.humus.core.ConnectionWrapper;
-import dev.humus.discovery.DiscoveryResponse;
-import dev.humus.discovery.GrpcDiscoveryPlugin;
+import dev.humus.core.ProxyPlugin;
+import dev.humus.core.ProxyPluginFactory;
 
 import java.sql.*;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.Properties;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
@@ -30,37 +27,26 @@ public class HumusDriver implements Driver {
 
     @Override
     public Connection connect(String url, Properties info) throws SQLException {
-        if (!acceptsURL(url)) {
-            return null;
+        if (!acceptsURL(url)) return null;
+
+        // 1. Загружаем плагины через SPI
+        List<ProxyPlugin> plugins = loadPlugins(url, info);
+
+        // 2. Разрешаем целевой URL через цепочку плагинов
+        String targetUrl = url;
+        for (ProxyPlugin plugin : plugins) {
+            targetUrl = plugin.getTargetUrl(targetUrl, info);
         }
 
-        Matcher matcher = URL_PATTERN.matcher(url);
-        if (!matcher.find()) {
-            throw new SQLException("Invalid Humus URL format. Expected: jdbc:humus:grpc://host:port/clusterName");
+        if (targetUrl.startsWith("jdbc:humus:")) {
+            throw new SQLException("No plugin could resolve target URL for " + url);
         }
 
-        String discoveryHost = matcher.group(1);
-        String discoveryPort = matcher.group(2);
-        String clusterName = matcher.group(3);
-
-        GrpcDiscoveryPlugin discoveryPlugin = new GrpcDiscoveryPlugin(
-                discoveryHost + ":" + discoveryPort, clusterName);
-
-        DiscoveryResponse node = discoveryPlugin.resolve();
-
-        String targetUrl = String.format("jdbc:postgresql://%s:%d/%s",
-                node.getHost(), node.getPort(), clusterName);
-
-        logger.log(Level.FINE, "Resolved target URL: {0}", targetUrl);
-
+        // 3. Подключаемся к реальной базе
         Driver underlyingDriver = findUnderlyingDriver(targetUrl);
         Connection physicalConn = underlyingDriver.connect(targetUrl, info);
 
-        if (physicalConn == null) {
-            throw new SQLException("Underlying driver failed to return a connection for " + targetUrl);
-        }
-
-        return new ConnectionWrapper(physicalConn, Collections.singletonList(discoveryPlugin), url, info);
+        return new ConnectionWrapper(physicalConn, plugins, url, info);
     }
 
     private Driver findUnderlyingDriver(String url) throws SQLException {
@@ -72,6 +58,40 @@ public class HumusDriver implements Driver {
             }
         }
         throw new SQLException("No suitable underlying driver found for " + url);
+    }
+
+    private String resolveTargetUrl(List<ProxyPlugin> plugins, String url, Properties info) throws SQLException {
+        String currentUrl = url;
+
+        for (ProxyPlugin plugin : plugins) {
+            // Каждый плагин может "подправить" URL или заменить его полностью
+            String resolvedUrl = plugin.getTargetUrl(currentUrl, info);
+            if (resolvedUrl != null && !resolvedUrl.equals(currentUrl)) {
+                logger.log(Level.FINE, "Plugin {0} resolved URL to: {1}",
+                        new Object[]{plugin.getClass().getSimpleName(), resolvedUrl});
+                currentUrl = resolvedUrl;
+            }
+        }
+
+        // Если после всех плагинов URL остался нашим (jdbc:humus:),
+        // значит никто не смог сделать Discovery - это ошибка.
+        if (currentUrl.startsWith("jdbc:humus:")) {
+            throw new SQLException("No plugin was able to resolve the target database URL for: " + url);
+        }
+
+        return currentUrl;
+    }
+
+    private List<ProxyPlugin> loadPlugins(String url, Properties info) {
+        List<ProxyPlugin> plugins = new ArrayList<>();
+        ServiceLoader<ProxyPluginFactory> loader = ServiceLoader.load(ProxyPluginFactory.class);
+        for (ProxyPluginFactory factory : loader) {
+            ProxyPlugin plugin = factory.create(url, info);
+            if (plugin != null) {
+                plugins.add(plugin);
+            }
+        }
+        return plugins;
     }
 
     @Override

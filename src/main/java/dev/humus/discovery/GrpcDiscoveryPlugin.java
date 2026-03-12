@@ -7,6 +7,7 @@ import io.grpc.ManagedChannelBuilder;
 
 import java.sql.SQLException;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -99,5 +100,17 @@ public class GrpcDiscoveryPlugin implements ProxyPlugin {
 
     public static void clearCache() {
         CACHE.clear();
+    }
+
+    // В GrpcDiscoveryPlugin.java
+    @Override
+    public String getTargetUrl(String url, Properties info) throws SQLException {
+        // Вызываем существующий метод resolve()
+        DiscoveryResponse node = this.resolve();
+
+        // Формируем целевой URL (извлекаем имя БД из оригинального URL или берем из параметров)
+        String dbName = url.substring(url.lastIndexOf("/") + 1);
+        return String.format("jdbc:postgresql://%s:%d/%s",
+                node.getHost(), node.getPort(), dbName);
     }
 }
