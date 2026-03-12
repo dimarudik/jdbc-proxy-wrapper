@@ -17,7 +17,6 @@ public class CustomSpiDiscoveryPlugin implements ProxyPlugin {
 
     @Override
     public String getTargetUrl(String url, Properties info) {
-        // Подменяем URL на тот, что передали в фабрику
         String dbName = url.substring(url.lastIndexOf("/") + 1);
         return "jdbc:postgresql://" + mockHost + ":" + mockPort + "/" + dbName;
     }

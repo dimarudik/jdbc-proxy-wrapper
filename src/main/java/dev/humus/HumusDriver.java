@@ -29,18 +29,10 @@ public class HumusDriver implements Driver {
     public Connection connect(String url, Properties info) throws SQLException {
         if (!acceptsURL(url)) return null;
 
-        logger.log(Level.INFO, "Connecting via Humus Proxy: {0}", url);
-
         List<ProxyPlugin> plugins = new ArrayList<>();
-
-        // Загружаем фабрики через SPI
         ServiceLoader<ProxyPluginFactory> loader = ServiceLoader.load(ProxyPluginFactory.class);
 
-        logger.log(Level.FINE, "Searching for ProxyPluginFactory implementations via SPI...");
-
-        int factoriesFound = 0;
         for (ProxyPluginFactory factory : loader) {
-            factoriesFound++;
             ProxyPlugin plugin = factory.create(url, info);
             if (plugin != null) {
                 plugins.add(plugin);
@@ -49,20 +41,12 @@ public class HumusDriver implements Driver {
             }
         }
 
-        if (plugins.isEmpty()) {
-            logger.log(Level.WARNING, "No plugins were created for this URL (checked {0} factories)", factoriesFound);
-        } else {
-            logger.log(Level.INFO, "Total plugins in chain: {0}", plugins.size());
-        }
-
-        // Разрешаем целевой URL
         String targetUrl = url;
         for (ProxyPlugin plugin : plugins) {
             String resolved = plugin.getTargetUrl(targetUrl, info);
             if (resolved != null && !resolved.equals(targetUrl)) {
-                logger.log(Level.INFO, "URL resolved by {0}: {1}",
-                        new Object[]{plugin.getClass().getSimpleName(), resolved});
                 targetUrl = resolved;
+                break;
             }
         }
 
@@ -91,7 +75,6 @@ public class HumusDriver implements Driver {
         String currentUrl = url;
 
         for (ProxyPlugin plugin : plugins) {
-            // Каждый плагин может "подправить" URL или заменить его полностью
             String resolvedUrl = plugin.getTargetUrl(currentUrl, info);
             if (resolvedUrl != null && !resolvedUrl.equals(currentUrl)) {
                 logger.log(Level.FINE, "Plugin {0} resolved URL to: {1}",
@@ -100,8 +83,6 @@ public class HumusDriver implements Driver {
             }
         }
 
-        // Если после всех плагинов URL остался нашим (jdbc:humus:),
-        // значит никто не смог сделать Discovery - это ошибка.
         if (currentUrl.startsWith("jdbc:humus:")) {
             throw new SQLException("No plugin was able to resolve the target database URL for: " + url);
         }
