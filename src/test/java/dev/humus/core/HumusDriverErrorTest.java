@@ -1,4 +1,4 @@
-package dev.humus;
+package dev.humus.core;
 
 import dev.humus.discovery.*;
 import io.grpc.Server;
@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class HumusDriverErrorTest {
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres")
             .withDatabaseName("humus_db").withUsername("user").withPassword("pass");
 
     private static Server grpcServer;

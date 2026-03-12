@@ -1,5 +1,5 @@
 
-package dev.humus;
+package dev.humus.core;
 
 import dev.humus.discovery.*;
 import io.grpc.Server;
