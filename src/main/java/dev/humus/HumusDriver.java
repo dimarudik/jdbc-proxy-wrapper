@@ -71,6 +71,7 @@ public class HumusDriver implements Driver {
         throw new SQLException("No suitable underlying driver found for " + url);
     }
 
+/*
     private String resolveTargetUrl(List<ProxyPlugin> plugins, String url, Properties info) throws SQLException {
         String currentUrl = url;
 
@@ -89,7 +90,9 @@ public class HumusDriver implements Driver {
 
         return currentUrl;
     }
+*/
 
+/*
     private List<ProxyPlugin> loadPlugins(String url, Properties info) {
         List<ProxyPlugin> plugins = new ArrayList<>();
         ServiceLoader<ProxyPluginFactory> loader = ServiceLoader.load(ProxyPluginFactory.class);
@@ -101,6 +104,7 @@ public class HumusDriver implements Driver {
         }
         return plugins;
     }
+*/
 
     @Override
     public boolean acceptsURL(String url) {
